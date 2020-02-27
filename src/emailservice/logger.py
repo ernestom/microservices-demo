@@ -15,6 +15,8 @@
 # limitations under the License.
 
 import logging
+from newrelic.agent import NewRelicContextFormatter
+
 import sys
 from pythonjsonlogger import jsonlogger
 
@@ -32,10 +34,18 @@ class CustomJsonFormatter(jsonlogger.JsonFormatter):
 
 def getJSONLogger(name):
   logger = logging.getLogger(name)
+
   handler = logging.StreamHandler(sys.stdout)
   formatter = CustomJsonFormatter('(timestamp) (severity) (name) (message)')
   handler.setFormatter(formatter)
+  # logger.addHandler(handler)
+
+  # Instantiate a new NR log handler
+  handler = logging.StreamHandler()
+  formatter = NewRelicContextFormatter()
+  handler.setFormatter(formatter)
   logger.addHandler(handler)
+
   logger.setLevel(logging.INFO)
   logger.propagate = False
   return logger

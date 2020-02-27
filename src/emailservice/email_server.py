@@ -14,6 +14,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import newrelic.agent
+newrelic.agent.initialize('/email_server/newrelic.ini')
+
 from concurrent import futures
 import argparse
 import os
@@ -67,6 +70,7 @@ class EmailService(BaseEmailService):
 
   @staticmethod
   def send_email(client, email_address, content):
+    newrelic.agent.set_transaction_name('send_email')
     response = client.send_message(
       sender = client.sender_path(project_id, region, sender_id),
       envelope_from_authority = '',
@@ -83,6 +87,7 @@ class EmailService(BaseEmailService):
         "html_body": content
       }
     )
+    newrelic.agent.record_custom_event('SentEmails', {'from': from_address, 'recipient': email_address})
     logger.info("Message sent: {}".format(response.rfc822_message_id))
 
   def SendOrderConfirmation(self, request, context):
