@@ -15,6 +15,10 @@
 package main
 
 import (
+	"github.com/sirupsen/logrus"
+	"github.com/newrelic/go-agent/v3/integrations/logcontext/nrlogrusplugin"
+	"github.com/newrelic/go-agent/v3/newrelic"
+
 	"bytes"
 	"context"
 	"flag"
@@ -34,7 +38,6 @@ import (
 	"cloud.google.com/go/profiler"
 	"contrib.go.opencensus.io/exporter/stackdriver"
 	"github.com/golang/protobuf/jsonpb"
-	"github.com/sirupsen/logrus"
 	"go.opencensus.io/exporter/jaeger"
 	"go.opencensus.io/plugin/ocgrpc"
 	"go.opencensus.io/stats/view"
@@ -47,6 +50,7 @@ import (
 var (
 	cat          pb.ListProductsResponse
 	catalogMutex *sync.Mutex
+	app          *newrelic.Application
 	log          *logrus.Logger
 	extraLatency time.Duration
 
@@ -56,15 +60,20 @@ var (
 )
 
 func init() {
+	app, _ = newrelic.NewApplication(
+		newrelic.ConfigAppName("productCatalog-service"),
+		newrelic.ConfigLicense("NEW_RELIC_LICENSE_KEY"),
+	)
 	log = logrus.New()
-	log.Formatter = &logrus.JSONFormatter{
-		FieldMap: logrus.FieldMap{
-			logrus.FieldKeyTime:  "timestamp",
-			logrus.FieldKeyLevel: "severity",
-			logrus.FieldKeyMsg:   "message",
-		},
-		TimestampFormat: time.RFC3339Nano,
-	}
+	// log.Formatter = &logrus.JSONFormatter{
+	// 	FieldMap: logrus.FieldMap{
+	// 		logrus.FieldKeyTime:  "timestamp",
+	// 		logrus.FieldKeyLevel: "severity",
+	// 		logrus.FieldKeyMsg:   "message",
+	// 	},
+	// 	TimestampFormat: time.RFC3339Nano,
+	// }
+	log.SetFormatter(nrlogrusplugin.ContextFormatter{})
 	log.Out = os.Stdout
 	catalogMutex = &sync.Mutex{}
 	err := readCatalogFile(&cat)
@@ -258,19 +267,27 @@ func parseCatalog() []*pb.Product {
 }
 
 func (p *productCatalog) Check(ctx context.Context, req *healthpb.HealthCheckRequest) (*healthpb.HealthCheckResponse, error) {
+	txn := app.StartTransaction("Check")
+	defer txn.End()
 	return &healthpb.HealthCheckResponse{Status: healthpb.HealthCheckResponse_SERVING}, nil
 }
 
 func (p *productCatalog) Watch(req *healthpb.HealthCheckRequest, ws healthpb.Health_WatchServer) error {
+	txn := app.StartTransaction("Watch")
+	defer txn.End()
 	return status.Errorf(codes.Unimplemented, "health check via Watch not implemented")
 }
 
 func (p *productCatalog) ListProducts(context.Context, *pb.Empty) (*pb.ListProductsResponse, error) {
+	txn := app.StartTransaction("ListProducts")
+	defer txn.End()
 	time.Sleep(extraLatency)
 	return &pb.ListProductsResponse{Products: parseCatalog()}, nil
 }
 
 func (p *productCatalog) GetProduct(ctx context.Context, req *pb.GetProductRequest) (*pb.Product, error) {
+	txn := app.StartTransaction("GetProduct")
+	defer txn.End()
 	time.Sleep(extraLatency)
 	var found *pb.Product
 	for i := 0; i < len(parseCatalog()); i++ {
@@ -285,6 +302,8 @@ func (p *productCatalog) GetProduct(ctx context.Context, req *pb.GetProductReque
 }
 
 func (p *productCatalog) SearchProducts(ctx context.Context, req *pb.SearchProductsRequest) (*pb.SearchProductsResponse, error) {
+	txn := app.StartTransaction("SearchProducts")
+	defer txn.End()
 	time.Sleep(extraLatency)
 	// Intepret query as a substring match in name or description.
 	var ps []*pb.Product
