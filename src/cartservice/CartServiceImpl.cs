@@ -20,6 +20,7 @@ using cartservice.interfaces;
 using Grpc.Core;
 using Hipstershop;
 using static Hipstershop.CartService;
+using NewRelic.Api;
 
 namespace cartservice
 {
@@ -46,6 +47,7 @@ namespace cartservice
             return Empty;
         }
 
+        [NewRelic.Api.Agent.Transaction]
         public override Task<Hipstershop.Cart> GetCart(GetCartRequest request, ServerCallContext context)
         {
             return cartStore.GetCartAsync(request.UserId);
