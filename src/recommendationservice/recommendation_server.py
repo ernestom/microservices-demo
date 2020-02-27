@@ -14,6 +14,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import newrelic.agent
+newrelic.agent.initialize('/recommendationservice/newrelic.ini')
+
 import os
 import random
 import time
@@ -64,6 +67,7 @@ def initStackdriverProfiling():
 
 class RecommendationService(demo_pb2_grpc.RecommendationServiceServicer):
     def ListRecommendations(self, request, context):
+        newrelic.agent.set_transaction_name('ListRecommendations')
         max_responses = 5
         # fetch list of products from product catalog stub
         cat_response = product_catalog_stub.ListProducts(demo_pb2.Empty())
@@ -77,11 +81,14 @@ class RecommendationService(demo_pb2_grpc.RecommendationServiceServicer):
         prod_list = [filtered_products[i] for i in indices]
         logger.info("[Recv ListRecommendations] product_ids={}".format(prod_list))
         # build and return response
+        for prod in prod_list:
+          newrelic.agent.record_custom_event('Recommendations', {'product': prod})
         response = demo_pb2.ListRecommendationsResponse()
         response.product_ids.extend(prod_list)
         return response
 
     def Check(self, request, context):
+        newrelic.agent.set_transaction_name('Check')
         return health_pb2.HealthCheckResponse(
             status=health_pb2.HealthCheckResponse.SERVING)
 
