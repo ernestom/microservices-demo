@@ -33,6 +33,10 @@ import (
 	"go.opencensus.io/stats/view"
 	"go.opencensus.io/trace"
 	"google.golang.org/grpc"
+	"github.com/newrelic/go-agent/v3/newrelic"
+	"github.com/newrelic/go-agent/v3/integrations/logcontext/nrlogrusplugin"
+	"github.com/newrelic/go-agent/v3/integrations/nrgorilla"
+	// "github.com/newrelic/go-agent/v3/integrations/nrgrpc"
 )
 
 const (
@@ -80,18 +84,36 @@ type frontendServer struct {
 	adSvcConn *grpc.ClientConn
 }
 
+var app *newrelic.Application
+
+func makeHandler(text string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(text))
+	})
+}
+
 func main() {
+	app, _ = newrelic.NewApplication(
+		func(config *newrelic.Config) {
+			// add more specific configuration of the agent within a custom ConfigOption
+			config.CrossApplicationTracer.Enabled = false
+			config.DistributedTracer.Enabled = true
+		},
+		newrelic.ConfigAppName(os.Getenv("NEW_RELIC_APP_NAME")),
+		newrelic.ConfigLicense(os.Getenv("NEW_RELIC_LICENSE_KEY")))
+
 	ctx := context.Background()
 	log := logrus.New()
 	log.Level = logrus.DebugLevel
-	log.Formatter = &logrus.JSONFormatter{
-		FieldMap: logrus.FieldMap{
-			logrus.FieldKeyTime:  "timestamp",
-			logrus.FieldKeyLevel: "severity",
-			logrus.FieldKeyMsg:   "message",
-		},
-		TimestampFormat: time.RFC3339Nano,
-	}
+	// log.Formatter = &logrus.JSONFormatter{
+	// 	FieldMap: logrus.FieldMap{
+	// 		logrus.FieldKeyTime:  "timestamp",
+	// 		logrus.FieldKeyLevel: "severity",
+	// 		logrus.FieldKeyMsg:   "message",
+	// 	},
+	// 	TimestampFormat: time.RFC3339Nano,
+	// }
+	log.SetFormatter(nrlogrusplugin.ContextFormatter{})
 	log.Out = os.Stdout
 
 	if os.Getenv("DISABLE_TRACING") == "" {
@@ -114,6 +136,7 @@ func main() {
 	}
 	addr := os.Getenv("LISTEN_ADDR")
 	svc := new(frontendServer)
+
 	mustMapEnv(&svc.productCatalogSvcAddr, "PRODUCT_CATALOG_SERVICE_ADDR")
 	mustMapEnv(&svc.currencySvcAddr, "CURRENCY_SERVICE_ADDR")
 	mustMapEnv(&svc.cartSvcAddr, "CART_SERVICE_ADDR")
@@ -131,6 +154,7 @@ func main() {
 	mustConnGRPC(ctx, &svc.adSvcConn, svc.adSvcAddr)
 
 	r := mux.NewRouter()
+	r.Use(nrgorilla.Middleware(app))
 	r.HandleFunc("/", svc.homeHandler).Methods(http.MethodGet, http.MethodHead)
 	r.HandleFunc("/product/{id}", svc.productHandler).Methods(http.MethodGet, http.MethodHead)
 	r.HandleFunc("/cart", svc.viewCartHandler).Methods(http.MethodGet, http.MethodHead)
