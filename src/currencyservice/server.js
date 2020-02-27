@@ -49,6 +49,7 @@ else {
   });
 }
 
+const newrelic = require("newrelic");
 const path = require('path');
 const grpc = require('grpc');
 const pino = require('pino');
@@ -143,6 +144,13 @@ function convert (call, callback) {
       result.units = Math.floor(result.units);
       result.nanos = Math.floor(result.nanos);
       result.currency_code = request.to_code;
+
+      // sample business data collected with New Relic API
+      newrelic.addCustomAttributes({
+        "currencyFrom": request.from,
+        "currencyTo": request.to_code,
+        "amountEuros": euros.nanos
+      });
 
       logger.info(`conversion request successful`);
       callback(null, result);
