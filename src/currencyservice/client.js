@@ -15,6 +15,7 @@
  * limitations under the License.
  *
  */
+const newrelic = require('newrelic');
 require('@google-cloud/trace-agent').start();
 
 const path = require('path');

@@ -8,7 +8,6 @@ WORKDIR /go/src/$PROJECT
 
 # restore dependencies
 COPY Gopkg.* ./
-RUN go get github.com/sirupsen/logrus github.com/newrelic/go-agent
 RUN dep ensure --vendor-only -v
 
 COPY . .

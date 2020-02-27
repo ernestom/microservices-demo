@@ -15,6 +15,10 @@
 package main
 
 import (
+	"github.com/sirupsen/logrus"
+	"github.com/newrelic/go-agent/v3/integrations/logcontext/nrlogrusplugin"
+	"github.com/newrelic/go-agent/v3/newrelic"
+
 	"fmt"
 	"net"
 	"os"
@@ -22,7 +26,6 @@ import (
 
 	"cloud.google.com/go/profiler"
 	"contrib.go.opencensus.io/exporter/stackdriver"
-	"github.com/sirupsen/logrus"
 	"go.opencensus.io/exporter/jaeger"
 	"go.opencensus.io/plugin/ocgrpc"
 	"go.opencensus.io/stats/view"
@@ -32,6 +35,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/status"
+	"github.com/newrelic/go-agent/v3/integrations/nrgrpc"
 
 	pb "github.com/GoogleCloudPlatform/microservices-demo/src/shippingservice/genproto"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
@@ -41,19 +45,30 @@ const (
 	defaultPort = "50051"
 )
 
+var app *newrelic.Application
 var log *logrus.Logger
 
 func init() {
+	app, _ = newrelic.NewApplication(
+		func(config *newrelic.Config) {
+			// add more specific configuration of the agent within a custom ConfigOption
+			config.CrossApplicationTracer.Enabled = false
+			config.DistributedTracer.Enabled = true
+		},
+		newrelic.ConfigAppName(os.Getenv("NEW_RELIC_APP_NAME")),
+		newrelic.ConfigLicense(os.Getenv("NEW_RELIC_LICENSE_KEY")))
+
 	log = logrus.New()
 	log.Level = logrus.DebugLevel
-	log.Formatter = &logrus.JSONFormatter{
-		FieldMap: logrus.FieldMap{
-			logrus.FieldKeyTime:  "timestamp",
-			logrus.FieldKeyLevel: "severity",
-			logrus.FieldKeyMsg:   "message",
-		},
-		TimestampFormat: time.RFC3339Nano,
-	}
+	// log.Formatter = &logrus.JSONFormatter{
+	// 	FieldMap: logrus.FieldMap{
+	// 		logrus.FieldKeyTime:  "timestamp",
+	// 		logrus.FieldKeyLevel: "severity",
+	// 		logrus.FieldKeyMsg:   "message",
+	// 	},
+	// 	TimestampFormat: time.RFC3339Nano,
+	// }
+	log.SetFormatter(nrlogrusplugin.ContextFormatter{})
 	log.Out = os.Stdout
 }
 
@@ -86,7 +101,11 @@ func main() {
 	var srv *grpc.Server
 	if os.Getenv("DISABLE_STATS") == "" {
 		log.Info("Stats enabled.")
-		srv = grpc.NewServer(grpc.StatsHandler(&ocgrpc.ServerHandler{}))
+		srv = grpc.NewServer(
+			// Add the New Relic gRPC server instrumentation
+			grpc.UnaryInterceptor(nrgrpc.UnaryServerInterceptor(app)),
+			grpc.StreamInterceptor(nrgrpc.StreamServerInterceptor(app)),
+			grpc.StatsHandler(&ocgrpc.ServerHandler{}))
 	} else {
 		log.Info("Stats disabled.")
 		srv = grpc.NewServer()
@@ -108,6 +127,7 @@ type server struct{}
 
 // Check is for health checking.
 func (s *server) Check(ctx context.Context, req *healthpb.HealthCheckRequest) (*healthpb.HealthCheckResponse, error) {
+	defer newrelic.StartSegment(newrelic.FromContext(ctx), "Check").End()	
 	return &healthpb.HealthCheckResponse{Status: healthpb.HealthCheckResponse_SERVING}, nil
 }
 
@@ -117,6 +137,7 @@ func (s *server) Watch(req *healthpb.HealthCheckRequest, ws healthpb.Health_Watc
 
 // GetQuote produces a shipping quote (cost) in USD.
 func (s *server) GetQuote(ctx context.Context, in *pb.GetQuoteRequest) (*pb.GetQuoteResponse, error) {
+	defer newrelic.StartSegment(newrelic.FromContext(ctx), "GetQuote").End()
 	log.Info("[GetQuote] received request")
 	defer log.Info("[GetQuote] completed request")
 
@@ -142,6 +163,7 @@ func (s *server) GetQuote(ctx context.Context, in *pb.GetQuoteRequest) (*pb.GetQ
 // ShipOrder mocks that the requested items will be shipped.
 // It supplies a tracking ID for notional lookup of shipment delivery status.
 func (s *server) ShipOrder(ctx context.Context, in *pb.ShipOrderRequest) (*pb.ShipOrderResponse, error) {
+	defer newrelic.StartSegment(newrelic.FromContext(ctx), "ShipOrder").End()
 	log.Info("[ShipOrder] received request")
 	defer log.Info("[ShipOrder] completed request")
 	// 1. Create a Tracking ID

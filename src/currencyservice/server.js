@@ -14,6 +14,8 @@
  * limitations under the License.
  */
 
+const newrelic = require('newrelic');
+
 if(process.env.DISABLE_PROFILER) {
   console.log("Profiler disabled.")
 }
@@ -49,7 +51,6 @@ else {
   });
 }
 
-const newrelic = require("newrelic");
 const path = require('path');
 const grpc = require('grpc');
 const pino = require('pino');
@@ -111,6 +112,7 @@ function _carry (amount) {
  * Lists the supported currencies
  */
 function getSupportedCurrencies (call, callback) {
+  newrelic.setTransactionName('getSupportedCurrencies');
   logger.info('Getting supported currencies...');
   _getCurrencyData((data) => {
     callback(null, {currency_codes: Object.keys(data)});
@@ -121,6 +123,7 @@ function getSupportedCurrencies (call, callback) {
  * Converts between currencies
  */
 function convert (call, callback) {
+  newrelic.setTransactionName('convert');
   logger.info('received conversion request');
   try {
     _getCurrencyData((data) => {
@@ -146,7 +149,7 @@ function convert (call, callback) {
       result.currency_code = request.to_code;
 
       // sample business data collected with New Relic API
-      newrelic.addCustomAttributes({
+      newrelic.recordCustomEvent('CurrencyConversion', {
         "currencyFrom": request.from,
         "currencyTo": request.to_code,
         "amountEuros": euros.nanos

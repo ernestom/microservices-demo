@@ -34,6 +34,16 @@ spec:
         env:
         - name: PORT
           value: "3550"
+        - name: NEW_RELIC_APP_NAME
+          value: productCatalog-service
+        - name: NEW_RELIC_LICENSE_KEY
+          value: MY_LICENSE_KEY
+        - name: NEW_RELIC_DISTRIBUTED_TRACING_ENABLED
+          value: "true"
+        - name: NEW_RELIC_LABELS
+          value: clusterName:GKE
+        - name: EXTRA_LATENCY
+          value: "2.0s"
         # - name: DISABLE_STATS
         #   value: "1"
         - name: DISABLE_TRACING

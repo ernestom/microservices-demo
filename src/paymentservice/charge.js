@@ -57,6 +57,7 @@ class ExpiredCreditCard extends CreditCardError {
  * @return transaction_id - a random uuid v4.
  */
 module.exports = function charge (request) {
+  newrelic.setTransactionName('chargeService');
   const { amount, credit_card: creditCard } = request;
   const cardNumber = creditCard.credit_card_number;
   const cardInfo = cardValidator(cardNumber);

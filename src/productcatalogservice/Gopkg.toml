@@ -42,6 +42,10 @@
   version = "0.2.0"
 
 [[constraint]]
+  name = "github.com/sirupsen/logrus"
+  version = "1.0.6"
+
+[[constraint]]
   name = "go.opencensus.io"
   version = "0.16.0"
 
@@ -52,6 +56,10 @@
 [[constraint]]
   name = "google.golang.org/grpc"
   version = "1.17.0"
+
+[[constraint]]
+  name = "github.com/newrelic/go-agent"
+  version = "3.3.0"
 
 [prune]
   go-tests = true

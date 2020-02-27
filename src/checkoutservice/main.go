@@ -35,6 +35,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"github.com/newrelic/go-agent/v3/integrations/nrgrpc"
 
 	pb "github.com/GoogleCloudPlatform/microservices-demo/src/checkoutservice/genproto"
 	money "github.com/GoogleCloudPlatform/microservices-demo/src/checkoutservice/money"
@@ -51,9 +52,14 @@ var log *logrus.Logger
 
 func init() {
 	app, _ = newrelic.NewApplication(
-		newrelic.ConfigAppName("checkout-service"),
-		newrelic.ConfigLicense("NEW_RELIC_LICENSE_KEY"),
-	)
+		func(config *newrelic.Config) {
+			// add more specific configuration of the agent within a custom ConfigOption
+			config.CrossApplicationTracer.Enabled = false
+			config.DistributedTracer.Enabled = true
+		},
+		newrelic.ConfigAppName(os.Getenv("NEW_RELIC_APP_NAME")),
+		newrelic.ConfigLicense(os.Getenv("NEW_RELIC_LICENSE_KEY")))
+
 	log = logrus.New()
 	log.Level = logrus.DebugLevel
 	// log.Formatter = &logrus.JSONFormatter{
@@ -115,7 +121,11 @@ func main() {
 	var srv *grpc.Server
 	if os.Getenv("DISABLE_STATS") == "" {
 		log.Info("Stats enabled.")
-		srv = grpc.NewServer(grpc.StatsHandler(&ocgrpc.ServerHandler{}))
+		srv = grpc.NewServer(
+			// Add the New Relic gRPC server instrumentation
+			grpc.UnaryInterceptor(nrgrpc.UnaryServerInterceptor(app)),
+			grpc.StreamInterceptor(nrgrpc.StreamServerInterceptor(app)),
+			grpc.StatsHandler(&ocgrpc.ServerHandler{}))
 	} else {
 		log.Info("Stats disabled.")
 		srv = grpc.NewServer()
@@ -217,6 +227,7 @@ func mustMapEnv(target *string, envKey string) {
 }
 
 func (cs *checkoutService) Check(ctx context.Context, req *healthpb.HealthCheckRequest) (*healthpb.HealthCheckResponse, error) {
+	defer newrelic.StartSegment(newrelic.FromContext(ctx), "Check").End()
 	return &healthpb.HealthCheckResponse{Status: healthpb.HealthCheckResponse_SERVING}, nil
 }
 
@@ -225,9 +236,7 @@ func (cs *checkoutService) Watch(req *healthpb.HealthCheckRequest, ws healthpb.H
 }
 
 func (cs *checkoutService) PlaceOrder(ctx context.Context, req *pb.PlaceOrderRequest) (*pb.PlaceOrderResponse, error) {
-	txn := app.StartTransaction("PlaceOrder")
-	defer txn.End()
-
+	defer newrelic.StartSegment(newrelic.FromContext(ctx), "PlaceOrder").End()
 	log.Infof("[PlaceOrder] user_id=%q user_currency=%q", req.UserId, req.UserCurrency)
 
 	orderID, err := uuid.NewUUID()
@@ -285,8 +294,7 @@ type orderPrep struct {
 }
 
 func (cs *checkoutService) prepareOrderItemsAndShippingQuoteFromCart(ctx context.Context, userID, userCurrency string, address *pb.Address) (orderPrep, error) {
-	txn := app.StartTransaction("PrepareOrder")
-	defer txn.End()
+	defer newrelic.StartSegment(newrelic.FromContext(ctx), "PrepareOrderItems").End()
 	var out orderPrep
 	cartItems, err := cs.getUserCart(ctx, userID)
 	if err != nil {
@@ -312,8 +320,7 @@ func (cs *checkoutService) prepareOrderItemsAndShippingQuoteFromCart(ctx context
 }
 
 func (cs *checkoutService) quoteShipping(ctx context.Context, address *pb.Address, items []*pb.CartItem) (*pb.Money, error) {
-	txn := app.StartTransaction("QuoteShipping")
-	defer txn.End()
+	defer newrelic.StartSegment(newrelic.FromContext(ctx), "QuoteShipping").End()
 	conn, err := grpc.DialContext(ctx, cs.shippingSvcAddr,
 		grpc.WithInsecure(),
 		grpc.WithStatsHandler(&ocgrpc.ClientHandler{}))
@@ -333,8 +340,7 @@ func (cs *checkoutService) quoteShipping(ctx context.Context, address *pb.Addres
 }
 
 func (cs *checkoutService) getUserCart(ctx context.Context, userID string) ([]*pb.CartItem, error) {
-	txn := app.StartTransaction("GetUserCart")
-	defer txn.End()
+	defer newrelic.StartSegment(newrelic.FromContext(ctx), "GetUserCart").End()
 	conn, err := grpc.DialContext(ctx, cs.cartSvcAddr, grpc.WithInsecure(), grpc.WithStatsHandler(&ocgrpc.ClientHandler{}))
 	if err != nil {
 		return nil, fmt.Errorf("could not connect cart service: %+v", err)
@@ -349,8 +355,7 @@ func (cs *checkoutService) getUserCart(ctx context.Context, userID string) ([]*p
 }
 
 func (cs *checkoutService) emptyUserCart(ctx context.Context, userID string) error {
-	txn := app.StartTransaction("EmptyUserCart")
-	defer txn.End()
+	defer newrelic.StartSegment(newrelic.FromContext(ctx), "EmptyUserCart").End()
 	conn, err := grpc.DialContext(ctx, cs.cartSvcAddr, grpc.WithInsecure(), grpc.WithStatsHandler(&ocgrpc.ClientHandler{}))
 	if err != nil {
 		return fmt.Errorf("could not connect cart service: %+v", err)
@@ -364,8 +369,7 @@ func (cs *checkoutService) emptyUserCart(ctx context.Context, userID string) err
 }
 
 func (cs *checkoutService) prepOrderItems(ctx context.Context, items []*pb.CartItem, userCurrency string) ([]*pb.OrderItem, error) {
-	txn := app.StartTransaction("PrepOrderItems")
-	defer txn.End()
+	defer newrelic.StartSegment(newrelic.FromContext(ctx), "PrepareOrderItems").End()
 	
 	out := make([]*pb.OrderItem, len(items))
 
@@ -393,8 +397,7 @@ func (cs *checkoutService) prepOrderItems(ctx context.Context, items []*pb.CartI
 }
 
 func (cs *checkoutService) convertCurrency(ctx context.Context, from *pb.Money, toCurrency string) (*pb.Money, error) {
-	txn := app.StartTransaction("ConvertCurrency")
-	defer txn.End()
+	defer newrelic.StartSegment(newrelic.FromContext(ctx), "ConvertCurrency").End()
 	conn, err := grpc.DialContext(ctx, cs.currencySvcAddr, grpc.WithInsecure(), grpc.WithStatsHandler(&ocgrpc.ClientHandler{}))
 	if err != nil {
 		return nil, fmt.Errorf("could not connect currency service: %+v", err)
@@ -410,8 +413,7 @@ func (cs *checkoutService) convertCurrency(ctx context.Context, from *pb.Money, 
 }
 
 func (cs *checkoutService) chargeCard(ctx context.Context, amount *pb.Money, paymentInfo *pb.CreditCardInfo) (string, error) {
-	txn := app.StartTransaction("ChargeCard")
-	defer txn.End()
+	defer newrelic.StartSegment(newrelic.FromContext(ctx), "ChargeCard").End()
 	conn, err := grpc.DialContext(ctx, cs.paymentSvcAddr, grpc.WithInsecure(), grpc.WithStatsHandler(&ocgrpc.ClientHandler{}))
 	if err != nil {
 		return "", fmt.Errorf("failed to connect payment service: %+v", err)
@@ -428,8 +430,7 @@ func (cs *checkoutService) chargeCard(ctx context.Context, amount *pb.Money, pay
 }
 
 func (cs *checkoutService) sendOrderConfirmation(ctx context.Context, email string, order *pb.OrderResult) error {
-	txn := app.StartTransaction("SendOrderConfirmation")
-	defer txn.End()
+	defer newrelic.StartSegment(newrelic.FromContext(ctx), "SendOrderConfirmation").End()
 	conn, err := grpc.DialContext(ctx, cs.emailSvcAddr, grpc.WithInsecure(), grpc.WithStatsHandler(&ocgrpc.ClientHandler{}))
 	if err != nil {
 		return fmt.Errorf("failed to connect email service: %+v", err)
@@ -442,8 +443,7 @@ func (cs *checkoutService) sendOrderConfirmation(ctx context.Context, email stri
 }
 
 func (cs *checkoutService) shipOrder(ctx context.Context, address *pb.Address, items []*pb.CartItem) (string, error) {
-	txn := app.StartTransaction("ShipOrder")
-	defer txn.End()
+	defer newrelic.StartSegment(newrelic.FromContext(ctx), "ShipOrder").End()
 	conn, err := grpc.DialContext(ctx, cs.shippingSvcAddr, grpc.WithInsecure(), grpc.WithStatsHandler(&ocgrpc.ClientHandler{}))
 	if err != nil {
 		return "", fmt.Errorf("failed to connect email service: %+v", err)

@@ -45,6 +45,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"github.com/newrelic/go-agent/v3/integrations/nrgrpc"
 )
 
 var (
@@ -61,9 +62,14 @@ var (
 
 func init() {
 	app, _ = newrelic.NewApplication(
-		newrelic.ConfigAppName("productCatalog-service"),
-		newrelic.ConfigLicense("NEW_RELIC_LICENSE_KEY"),
-	)
+		func(config *newrelic.Config) {
+			// add more specific configuration of the agent within a custom ConfigOption
+			config.CrossApplicationTracer.Enabled = false
+			config.DistributedTracer.Enabled = true
+		},
+		newrelic.ConfigAppName(os.Getenv("NEW_RELIC_APP_NAME")),
+		newrelic.ConfigLicense(os.Getenv("NEW_RELIC_LICENSE_KEY")))
+
 	log = logrus.New()
 	// log.Formatter = &logrus.JSONFormatter{
 	// 	FieldMap: logrus.FieldMap{
@@ -143,7 +149,11 @@ func run(port string) string {
 	var srv *grpc.Server
 	if os.Getenv("DISABLE_STATS") == "" {
 		log.Info("Stats enabled.")
-		srv = grpc.NewServer(grpc.StatsHandler(&ocgrpc.ServerHandler{}))
+		srv = grpc.NewServer(
+			// Add the New Relic gRPC server instrumentation
+		    grpc.UnaryInterceptor(nrgrpc.UnaryServerInterceptor(app)),
+		    grpc.StreamInterceptor(nrgrpc.StreamServerInterceptor(app)),
+			grpc.StatsHandler(&ocgrpc.ServerHandler{}))
 	} else {
 		log.Info("Stats disabled.")
 		srv = grpc.NewServer()
@@ -267,27 +277,22 @@ func parseCatalog() []*pb.Product {
 }
 
 func (p *productCatalog) Check(ctx context.Context, req *healthpb.HealthCheckRequest) (*healthpb.HealthCheckResponse, error) {
-	txn := app.StartTransaction("Check")
-	defer txn.End()
+	defer newrelic.StartSegment(newrelic.FromContext(ctx), "Check").End()
 	return &healthpb.HealthCheckResponse{Status: healthpb.HealthCheckResponse_SERVING}, nil
 }
 
 func (p *productCatalog) Watch(req *healthpb.HealthCheckRequest, ws healthpb.Health_WatchServer) error {
-	txn := app.StartTransaction("Watch")
-	defer txn.End()
 	return status.Errorf(codes.Unimplemented, "health check via Watch not implemented")
 }
 
-func (p *productCatalog) ListProducts(context.Context, *pb.Empty) (*pb.ListProductsResponse, error) {
-	txn := app.StartTransaction("ListProducts")
-	defer txn.End()
+func (p *productCatalog) ListProducts(ctx context.Context, req *pb.Empty) (*pb.ListProductsResponse, error) {
+	defer newrelic.StartSegment(newrelic.FromContext(ctx), "ListProducts").End()
 	time.Sleep(extraLatency)
 	return &pb.ListProductsResponse{Products: parseCatalog()}, nil
 }
 
 func (p *productCatalog) GetProduct(ctx context.Context, req *pb.GetProductRequest) (*pb.Product, error) {
-	txn := app.StartTransaction("GetProduct")
-	defer txn.End()
+	defer newrelic.StartSegment(newrelic.FromContext(ctx), "GetProduct").End()
 	time.Sleep(extraLatency)
 	var found *pb.Product
 	for i := 0; i < len(parseCatalog()); i++ {
@@ -302,8 +307,7 @@ func (p *productCatalog) GetProduct(ctx context.Context, req *pb.GetProductReque
 }
 
 func (p *productCatalog) SearchProducts(ctx context.Context, req *pb.SearchProductsRequest) (*pb.SearchProductsResponse, error) {
-	txn := app.StartTransaction("SearchProducts")
-	defer txn.End()
+	defer newrelic.StartSegment(newrelic.FromContext(ctx), "SearchProducts").End()
 	time.Sleep(extraLatency)
 	// Intepret query as a substring match in name or description.
 	var ps []*pb.Product
