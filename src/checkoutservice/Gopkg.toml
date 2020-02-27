@@ -24,7 +24,6 @@
 #   go-tests = true
 #   unused-packages = true
 
-
 [[constraint]]
   name = "cloud.google.com/go"
   version = "0.40.0"
@@ -40,10 +39,6 @@
 [[constraint]]
   name = "github.com/google/uuid"
   version = "1.0.0"
-
-[[constraint]]
-  name = "github.com/sirupsen/logrus"
-  version = "1.0.6"
 
 [[constraint]]
   name = "go.opencensus.io"
